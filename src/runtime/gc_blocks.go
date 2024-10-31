@@ -123,8 +123,20 @@ func (b gcBlock) address() uintptr {
 // points to an allocated object. It returns the same block if this block
 // already points to the head.
 func (b gcBlock) findHead() gcBlock {
-	for b.state() == blockStateTail {
-		b--
+	const blockStateByteAllTails = uint8(blockStateTail<<(stateBits*3) | blockStateTail<<(stateBits*2) | blockStateTail<<(stateBits*1) | blockStateTail<<(stateBits*0))
+	for {
+		if b%blocksPerStateByte == blocksPerStateByte-1 {
+			stateByte := *(*uint8)(unsafe.Add(metadataStart, b/blocksPerStateByte))
+			if stateByte == blockStateByteAllTails {
+				b -= 4
+				continue
+			}
+		}
+		if b.state() == blockStateTail {
+			b--
+			continue
+		}
+		break
 	}
 	if gcAsserts {
 		if b.state() != blockStateHead && b.state() != blockStateMark {
