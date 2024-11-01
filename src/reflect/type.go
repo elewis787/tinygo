@@ -608,14 +608,22 @@ func (t *rawType) String() string {
 		s += " }"
 		return s
 	case Func:
+		isVariadic := t.IsVariadic()
 
 		f := "func("
 		for i := 0; i < t.NumIn(); i++ {
 			if i > 0 {
 				f += ", "
 			}
-			f += t.In(i).String()
+
+			input := t.In(i).String()
+			if isVariadic && i == t.NumIn()-1 {
+				f += "..."
+				input = input[2:]
+			}
+			f += input
 		}
+
 		f += ") "
 
 		var rets string
@@ -1069,14 +1077,24 @@ func (t *rawType) ConvertibleTo(u Type) bool {
 }
 
 func (t *rawType) IsVariadic() bool {
-	// need to test if bool mapped to int set by compiler
+	if t.isNamed() {
+		named := (*namedType)(unsafe.Pointer(t))
+		t = named.elem
+	}
+
 	if t.Kind() != Func {
 		panic("reflect: IsVariadic of non-func type")
 	}
+
 	return (*funcType)(unsafe.Pointer(t)).variadic
 }
 
 func (t *rawType) NumIn() int {
+	if t.isNamed() {
+		named := (*namedType)(unsafe.Pointer(t))
+		return int((*funcType)(unsafe.Pointer(named.elem)).inCount)
+	}
+
 	if t.Kind() != Func {
 		panic("reflect: NumIn of non-func type")
 	}
@@ -1084,6 +1102,11 @@ func (t *rawType) NumIn() int {
 }
 
 func (t *rawType) NumOut() int {
+	if t.isNamed() {
+		named := (*namedType)(unsafe.Pointer(t))
+		return int((*funcType)(unsafe.Pointer(named.elem)).outCount)
+	}
+
 	if t.Kind() != Func {
 		panic("reflect: NumOut of non-func type")
 	}
@@ -1163,33 +1186,43 @@ func addChecked(p unsafe.Pointer, x uintptr, whySafe string) unsafe.Pointer {
 }
 
 func (t *rawType) In(i int) Type {
+	if t.isNamed() {
+		named := (*namedType)(unsafe.Pointer(t))
+		t = named.elem
+	}
+
 	if t.Kind() != Func {
 		panic(errTypeField)
 	}
-	descriptor := (*funcType)(unsafe.Pointer(t.underlying()))
-	if uint(i) >= uint(descriptor.inCount) {
+	fType := (*funcType)(unsafe.Pointer(t))
+	if uint(i) >= uint(fType.inCount) {
 		panic("reflect: field index out of range")
 	}
 
-	pointer := (unsafe.Add(unsafe.Pointer(&descriptor.fields[0]), uintptr(i)*unsafe.Sizeof(unsafe.Pointer(nil))))
-	return (*rawType)(*(**rawType)(pointer))
+	pointer := (unsafe.Add(unsafe.Pointer(&fType.fields[0]), uintptr(i)*unsafe.Sizeof(unsafe.Pointer(nil))))
+	return (*(**rawType)(pointer))
 }
 
 func (t *rawType) Out(i int) Type {
+	if t.isNamed() {
+		named := (*namedType)(unsafe.Pointer(t))
+		t = named.elem
+	}
+
 	if t.Kind() != Func {
 		panic(errTypeField)
 	}
 
-	descriptor := (*funcType)(unsafe.Pointer(t.underlying()))
-	if uint(i) >= uint(descriptor.outCount) {
+	fType := (*funcType)(unsafe.Pointer(t))
+
+	if uint(i) >= uint(fType.outCount) {
 		panic("reflect: field index out of range")
 	}
 
 	// Shift the index by the number of input parameters.
-	i = i + int((*funcType)(unsafe.Pointer(t)).inCount)
-
-	pointer := (unsafe.Add(unsafe.Pointer(&descriptor.fields[0]), uintptr(i)*unsafe.Sizeof(unsafe.Pointer(nil))))
-	return (*rawType)(*(**rawType)(pointer))
+	i = i + int(fType.inCount)
+	pointer := (unsafe.Add(unsafe.Pointer(&fType.fields[0]), uintptr(i)*unsafe.Sizeof(unsafe.Pointer(nil))))
+	return (*(**rawType)(pointer))
 }
 
 // OverflowComplex reports whether the complex128 x cannot be represented by type t.
