@@ -489,9 +489,10 @@ type structField struct {
 
 type funcType struct {
 	rawType
-	ptrType  *rawType
+	ptrTo    *rawType
 	inCount  uint16
 	outCount uint16
+	variadic bool
 	fields   [1]*rawType // the remaining fields are all of type funcField
 }
 
@@ -606,6 +607,28 @@ func (t *rawType) String() string {
 		}
 		s += " }"
 		return s
+	case Func:
+
+		f := "func("
+		for i := 0; i < t.NumIn(); i++ {
+			if i > 0 {
+				f += ", "
+			}
+			f += t.In(i).String()
+		}
+		f += ") "
+
+		var rets string
+		for i := 0; i < t.NumOut(); i++ {
+			if i > 0 {
+				rets += ", "
+			}
+			rets += t.Out(i).String()
+		}
+		if t.NumOut() > 1 {
+			rets = "(" + rets + ")"
+		}
+		return f + rets
 	case Interface:
 		// TODO(dgryski): Needs actual method set info
 		return "interface {}"
@@ -1050,7 +1073,7 @@ func (t *rawType) IsVariadic() bool {
 	if t.Kind() != Func {
 		panic("reflect: IsVariadic of non-func type")
 	}
-	return (*funcType)(unsafe.Pointer(t)).outCount&(1<<15) != 0
+	return (*funcType)(unsafe.Pointer(t)).variadic
 }
 
 func (t *rawType) NumIn() int {
@@ -1156,11 +1179,14 @@ func (t *rawType) Out(i int) Type {
 	if t.Kind() != Func {
 		panic(errTypeField)
 	}
-	i = i + int((*funcType)(unsafe.Pointer(t)).inCount)
+
 	descriptor := (*funcType)(unsafe.Pointer(t.underlying()))
-	if uint(i) > uint(descriptor.inCount) && uint(i) <= uint(descriptor.outCount+descriptor.inCount) {
+	if uint(i) >= uint(descriptor.outCount) {
 		panic("reflect: field index out of range")
 	}
+
+	// Shift the index by the number of input parameters.
+	i = i + int((*funcType)(unsafe.Pointer(t)).inCount)
 
 	pointer := (unsafe.Add(unsafe.Pointer(&descriptor.fields[0]), uintptr(i)*unsafe.Sizeof(unsafe.Pointer(nil))))
 	return (*rawType)(*(**rawType)(pointer))

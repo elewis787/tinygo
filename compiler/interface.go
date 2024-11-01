@@ -248,6 +248,7 @@ func (c *compilerContext) getTypeCode(typ types.Type) llvm.Value {
 				types.NewVar(token.NoPos, nil, "ptrTo", types.Typ[types.UnsafePointer]),
 				types.NewVar(token.NoPos, nil, "inCount", types.Typ[types.Uint16]),
 				types.NewVar(token.NoPos, nil, "outCount", types.Typ[types.Uint16]),
+				types.NewVar(token.NoPos, nil, "variadic", types.Typ[types.Bool]),
 				types.NewVar(token.NoPos, nil, "fields", types.NewArray(types.Typ[types.UnsafePointer], int64(typ.Params().Len()+typ.Results().Len()))),
 			)
 		}
@@ -409,13 +410,9 @@ func (c *compilerContext) getTypeCode(typ types.Type) llvm.Value {
 			typeFields = []llvm.Value{c.getTypeCode(types.NewPointer(typ))}
 			// TODO: methods
 		case *types.Signature:
-			v := typ.Results().Len()
+			v := 0
 			if typ.Variadic() {
-				// set variadic to 1
-				v = v | (1 << 15)
-			} else {
-				// set variadic to 0
-				v = v & ^(1 << 15)
+				v = 1
 			}
 
 			var vars []*types.Var
@@ -433,9 +430,9 @@ func (c *compilerContext) getTypeCode(typ types.Type) llvm.Value {
 			}
 			typeFields = []llvm.Value{c.getTypeCode(types.NewPointer(typ)),
 				llvm.ConstInt(c.ctx.Int16Type(), uint64(typ.Params().Len()), false),
-				llvm.ConstInt(c.ctx.Int16Type(), uint64(v), false),
+				llvm.ConstInt(c.ctx.Int16Type(), uint64(typ.Results().Len()), false),
+				llvm.ConstInt(c.ctx.Int1Type(), uint64(v), false),
 			}
-
 			typeFields = append(typeFields, llvm.ConstArray(c.dataPtrType, fields))
 		}
 		// Prepend metadata byte.
